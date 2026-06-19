@@ -8,15 +8,18 @@ function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Transient = worth retrying (network blips, throttling, 5xx). Auth/RLS/validation are not. */
+/** Transient = worth retrying (network blips, throttling, 5xx, gateway). Auth/RLS/validation are not. */
 function isTransient(err: unknown): boolean {
   const m = errMessage(err).toLowerCase();
-  return /fetch failed|network|econnreset|etimedout|socket|timeout|429|rate limit|5\d\d/.test(m);
+  return /fetch failed|network|econnreset|econnrefused|etimedout|eai_again|socket|timeout|throttl|429|rate limit|too many|5\d\d|bad gateway|gateway time|service unavailable|temporarily unavailable|unavailable/.test(
+    m,
+  );
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-async function withRetry<T>(op: () => Promise<T>, label: string, attempts = 3): Promise<T> {
+// Blob uploads hit Storage hardest during a big first sync, so give them more attempts.
+async function withRetry<T>(op: () => Promise<T>, label: string, attempts = 4): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {

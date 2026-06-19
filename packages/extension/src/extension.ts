@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import { hostname } from "node:os";
+import { writeFileSync, readFileSync, rmSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { repoIdForPath } from "@cursorsync/cursor-store";
 import { AuthManager, type AuthUser } from "./auth.js";
 import { Transport } from "./transport.js";
@@ -128,14 +130,66 @@ export function activate(ctx: vscode.ExtensionContext) {
     refresh();
   };
 
+  // Cross-window single-flight: Cursor's chat DB is global, but every open window runs its own sync
+  // timer. A lease file in the shared globalStorage dir lets only one window sync at a time, so
+  // multiple windows (e.g. a repo and its working copy) don't hammer the backend in parallel.
+  const lockPath = join(ctx.globalStorageUri.fsPath, "sync.lock");
+  const LEASE_TTL_MS = 120_000; // a lease older than this means the holder window died
+  const readLease = (): { pid: number; ts: number } | null => {
+    try {
+      return JSON.parse(readFileSync(lockPath, "utf8")) as { pid: number; ts: number };
+    } catch {
+      return null;
+    }
+  };
+  const claimLease = (): boolean => {
+    const l = readLease();
+    if (l && (l.pid === process.pid || Date.now() - l.ts >= LEASE_TTL_MS)) {
+      try {
+        rmSync(lockPath);
+      } catch {
+        /* stale lease already gone */
+      }
+    }
+    try {
+      mkdirSync(dirname(lockPath), { recursive: true });
+      writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: Date.now() }), { flag: "wx" });
+      return true;
+    } catch {
+      return false; // another live window holds it
+    }
+  };
+  const refreshLease = (): void => {
+    try {
+      writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: Date.now() }));
+    } catch {
+      /* best effort */
+    }
+  };
+  const releaseLease = (): void => {
+    if (readLease()?.pid === process.pid) {
+      try {
+        rmSync(lockPath);
+      } catch {
+        /* already gone */
+      }
+    }
+  };
+  ctx.subscriptions.push({ dispose: releaseLease });
+
   // Background ticks push at most this many rows so they never run away; the manual button is uncapped.
   const BG_CAP = 5000;
   async function doUpSync(opts?: { background?: boolean }) {
     if (!user) {
-      if (!opts?.background) vscode.window.showInformationMessage("cursorsync: sign in first.");
+      if (!opts?.background) vscode.window.showInformationMessage("Cursor Sync: sign in first.");
       return;
     }
-    if (status === "syncing") return; // never overlap syncs
+    if (status === "syncing") return; // never overlap syncs within this window
+    if (!claimLease()) {
+      if (!opts?.background)
+        addLog("Another Cursor window is syncing — it'll continue automatically.");
+      return;
+    }
     try {
       busy = "push";
       setStatus("syncing", "Pushing chats…");
@@ -146,6 +200,7 @@ export function activate(ctx: vscode.ExtensionContext) {
         prefs,
         cfg.policy,
         opts?.background ? BG_CAP : Infinity,
+        refreshLease,
       );
       stats.pushed += r.pushed;
       stats.lastSync = new Date().toLocaleString();
@@ -158,6 +213,8 @@ export function activate(ctx: vscode.ExtensionContext) {
       out.appendLine(`upSync ERROR: ${(e as Error).stack ?? (e as Error).message}`);
       addLog(`Push error: ${(e as Error).message}`);
       setStatus("error", "Push failed");
+    } finally {
+      releaseLease();
     }
   }
 

@@ -181,6 +181,7 @@ export class SyncBridge {
     prefs: Map<string, boolean>,
     policy: SyncPolicy,
     maxRows = Infinity,
+    onBatch?: () => void,
   ): Promise<UpResult> {
     const db = openReadonly();
     try {
@@ -223,6 +224,7 @@ export class SyncBridge {
           // Persist progress per batch — resumable, and frees the batch from memory.
           state = { rowids: { ...state.rowids, [source]: since } };
           await this.setWatermark(state);
+          onBatch?.(); // heartbeat (e.g. refresh the cross-window sync lease)
           if (rows.length < UP_BATCH) break;
         }
       }
