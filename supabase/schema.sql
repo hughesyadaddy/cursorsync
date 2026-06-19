@@ -15,12 +15,14 @@ create table if not exists cursor_kv (
   ckey       text not null,               -- the raw Cursor key
   is_binary  boolean not null default false,
   value      text,                        -- UTF-8 text (usually JSON) or base64 when is_binary
+  repo       text,                        -- stable repo id (git remote) for conversation rows; null otherwise
   device_id  text,
   updated_at timestamptz not null default now()
 );
 
 create index if not exists cursor_kv_owner_idx        on cursor_kv (owner_id);
 create index if not exists cursor_kv_owner_source_idx on cursor_kv (owner_id, source);
+create index if not exists cursor_kv_owner_repo_idx   on cursor_kv (owner_id, repo);
 
 -- Row Level Security: each authenticated user only sees their own rows.
 alter table cursor_kv enable row level security;

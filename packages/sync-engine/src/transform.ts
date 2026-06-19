@@ -12,6 +12,8 @@ export interface KvRecord {
   ckey: string;
   is_binary: boolean;
   value: string | null;
+  /** Stable repo id (git remote) this row belongs to, or null for non-conversation rows. */
+  repo: string | null;
   device_id: string;
 }
 
@@ -24,7 +26,12 @@ export function rowId(ownerId: string, source: Source, key: string): string {
  * Encode a raw Cursor row for sync. Values that are valid UTF-8 (JSON, strings) are stored as
  * text; anything else (agentKv protobuf/gzip blobs, etc.) is base64-encoded with is_binary=true.
  */
-export function toKvRecord(row: KvRow, ownerId: string, deviceId: string): KvRecord {
+export function toKvRecord(
+  row: KvRow,
+  ownerId: string,
+  deviceId: string,
+  repo: string | null = null,
+): KvRecord {
   let isBinary = false;
   let value: string | null = null;
   if (typeof row.value === "string") {
@@ -44,6 +51,7 @@ export function toKvRecord(row: KvRow, ownerId: string, deviceId: string): KvRec
     ckey: row.key,
     is_binary: isBinary,
     value,
+    repo,
     device_id: deviceId,
   };
 }

@@ -1,10 +1,14 @@
 {
   "name": "cursorsync",
   "displayName": "cursorsync",
-  "description": "Real-time, local-first sync of Cursor chat history across devices (PowerSync + Supabase)",
-  "version": "0.0.1",
+  "description": "Sync your Cursor chat history across all your devices.",
+  "version": "0.1.0",
   "license": "MIT",
-  "publisher": "alexhughes",
+  "publisher": "hughesyadaddy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hughesyadaddy/cursorsync.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -16,18 +20,44 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cursorsync",
+          "title": "cursorsync",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "cursorsync": [
+        {
+          "id": "cursorsync.panel",
+          "name": "Sync",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
       {
-        "command": "cursorsync.status",
-        "title": "cursorsync: Show Sync Status"
+        "command": "cursorsync.signIn",
+        "title": "cursorsync: Sign in with GitHub"
+      },
+      {
+        "command": "cursorsync.signOut",
+        "title": "cursorsync: Sign out"
       },
       {
         "command": "cursorsync.syncNow",
-        "title": "cursorsync: Sync Now"
+        "title": "cursorsync: Sync all chats now (push)"
       },
       {
-        "command": "cursorsync.signIn",
-        "title": "cursorsync: Sign In to Supabase"
+        "command": "cursorsync.pullNow",
+        "title": "cursorsync: Pull chats from cloud"
+      },
+      {
+        "command": "cursorsync.focus",
+        "title": "cursorsync: Open panel"
       }
     ],
     "configuration": {
@@ -35,29 +65,43 @@
       "properties": {
         "cursorsync.supabaseUrl": {
           "type": "string",
-          "default": "",
-          "description": "Supabase project URL"
+          "default": "https://jwuigueuwlcbyddpnjrz.supabase.co",
+          "description": "Supabase project URL (defaults to the cursorsync backend)."
         },
-        "cursorsync.powersyncUrl": {
+        "cursorsync.supabaseAnonKey": {
           "type": "string",
-          "default": "",
-          "description": "PowerSync instance URL"
+          "default": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3dWlndWV1d2xjYnlkZHBuanJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4Mzg5ODgsImV4cCI6MjA5NzQxNDk4OH0.NUk6mHEr2jlG0NitUmAlbJCczsz6Wd23ZRVa4WEIArw",
+          "description": "Supabase anon (public, RLS-protected) key."
         },
-        "cursorsync.syncAgentBlobs": {
+        "cursorsync.autoSync": {
           "type": "boolean",
-          "default": false,
-          "description": "Phase 2: also sync agentKv blobs (~12 GB)"
+          "default": true,
+          "description": "Automatically push new chats and pull remote changes in the background."
+        },
+        "cursorsync.syncScope": {
+          "type": "string",
+          "enum": [
+            "all",
+            "repo"
+          ],
+          "enumDescriptions": [
+            "Sync every chat across all your repos.",
+            "Only sync chats that belong to the current repo (matched by git remote)."
+          ],
+          "default": "all",
+          "description": "Whether to sync all chats or isolate sync to the current repository. Toggleable from the cursorsync panel."
         }
       }
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "package": "vsce package"
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "@cursorsync/cursor-store": "workspace:*",
-    "@cursorsync/sync-engine": "workspace:*"
+    "@cursorsync/sync-engine": "workspace:*",
+    "@supabase/supabase-js": "^2.45.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",
