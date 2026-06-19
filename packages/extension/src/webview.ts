@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
+import { buildPanelHtml } from "./panel-html.js";
 import type { AuthUser } from "./auth.js";
 import type { SyncScope } from "./config.js";
 
@@ -65,31 +66,15 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   }
 
   private html(webview: vscode.Webview): string {
-    const nonce = randomBytes(16).toString("hex");
-    const asset = (file: string): vscode.Uri =>
-      webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", file));
-    const csp = [
-      `default-src 'none'`,
-      `img-src ${webview.cspSource} https: data:`,
-      `style-src ${webview.cspSource}`,
-      `script-src 'nonce-${nonce}'`,
-    ].join("; ");
-    return /* html */ `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="${csp}" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="${asset("panel.css")}" />
-</head>
-<body>
-  <header class="brand">
-    <img class="logo" src="${asset("logo.svg")}" alt="" />
-    <div class="brand-text"><h1>Cursor Sync</h1><span class="ver">v${this.version}</span></div>
-  </header>
-  <div id="view"></div>
-  <script nonce="${nonce}" src="${asset("panel.js")}"></script>
-</body>
-</html>`;
+    const asset = (file: string): string =>
+      webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", file)).toString();
+    return buildPanelHtml({
+      cspSource: webview.cspSource,
+      nonce: randomBytes(16).toString("hex"),
+      styleUri: asset("panel.css"),
+      scriptUri: asset("panel.js"),
+      logoUri: asset("logo.svg"),
+      version: this.version,
+    });
   }
 }

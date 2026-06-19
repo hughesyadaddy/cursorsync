@@ -22,6 +22,7 @@ that is enforced and how to re-verify it.
 ## Enforcement (every layer is default-deny)
 
 ### Table `cursor_kv`
+
 - Row Level Security is **enabled and FORCED** (`force row level security`), so the policy applies
   even to the table owner — there is no role that silently bypasses it.
 - The single policy is scoped to the `authenticated` role and requires `owner_id = auth.uid()` for
@@ -31,6 +32,7 @@ that is enforced and how to re-verify it.
   the grant layer (HTTP 401, `42501`) before RLS is even evaluated.
 
 ### Bucket `cursor-blobs`
+
 - The bucket is **private** (no public CDN URLs).
 - Objects live at `{owner_id}/{sha256}`. Storage policies (authenticated only) allow `select` and
   `insert` **only** where the first path segment equals `auth.uid()`. You cannot read, list, or
@@ -44,15 +46,15 @@ These guarantees are not just asserted — they are tested by spinning up a seco
 authenticated user ("Mallory") and confirming she cannot breach the first user's data from any
 angle, plus a positive control proving the API still works for legitimate access:
 
-| Attack (as a second signed-in user) | Result |
-| --- | --- |
-| Read all of another user's rows | empty |
-| Filter rows by the victim's `owner_id` | empty |
-| Fetch the victim's exact row by primary key | empty |
-| Insert a row owned by the victim | rejected (RLS `with check`) |
-| Download / list the victim's blobs | denied |
-| Read/write her **own** rows (positive control) | allowed |
-| Anything with the anon key only | denied at the grant layer (401) |
+| Attack (as a second signed-in user)            | Result                          |
+| ---------------------------------------------- | ------------------------------- |
+| Read all of another user's rows                | empty                           |
+| Filter rows by the victim's `owner_id`         | empty                           |
+| Fetch the victim's exact row by primary key    | empty                           |
+| Insert a row owned by the victim               | rejected (RLS `with check`)     |
+| Download / list the victim's blobs             | denied                          |
+| Read/write her **own** rows (positive control) | allowed                         |
+| Anything with the anon key only                | denied at the grant layer (401) |
 
 All checks pass. To re-run the audit, inspect `pg_policies` and `pg_class.relforcerowsecurity` for
 `cursor_kv` / `storage.objects`, then exercise the REST and Storage endpoints with a throwaway
