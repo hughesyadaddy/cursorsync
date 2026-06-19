@@ -5,6 +5,7 @@ out/
 *.log
 .env
 .env.*
+!.env.example
 .DS_Store
 
 # Never commit copies of Cursor databases or extracted chat data

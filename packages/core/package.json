@@ -11,7 +11,8 @@
     "probe": "node --loader ts-node/esm src/probe.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0"
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
