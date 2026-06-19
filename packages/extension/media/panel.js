@@ -72,10 +72,10 @@
 
       ${s.status === "error" ? `<div class="banner error">${esc(s.statusText)}</div>` : ""}
 
-      <button class="btn btn-primary ${syncing ? "loading" : ""}" data-action="syncNow" ${syncing ? "disabled" : ""}>
+      <button class="btn btn-primary ${s.busy === "push" ? "loading" : ""}" data-action="syncNow" ${syncing ? "disabled" : ""}>
         ${ICON.sync} Sync now
       </button>
-      <button class="btn btn-secondary ${syncing ? "loading" : ""}" data-action="pullNow" ${syncing ? "disabled" : ""}>
+      <button class="btn btn-secondary ${s.busy === "pull" ? "loading" : ""}" data-action="pullNow" ${syncing ? "disabled" : ""}>
         ${ICON.down} Pull from cloud
       </button>
 

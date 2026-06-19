@@ -21,6 +21,8 @@ export interface PanelState {
   repos: RepoEntry[];
   repo: string | null;
   status: "idle" | "syncing" | "error";
+  /** Which operation is in flight (drives the per-button spinner); null when idle. */
+  busy: "push" | "pull" | null;
   statusText: string;
   stats: { pushed: number; pulled: number; lastSync: string | null };
   log: string[];

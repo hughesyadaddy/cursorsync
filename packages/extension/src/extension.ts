@@ -26,6 +26,8 @@ export function activate(ctx: vscode.ExtensionContext) {
   const log: string[] = [];
   let status: PanelState["status"] = "idle";
   let statusText = "Ready";
+  // Which sync operation is in flight, so only its button spins (the other just disables).
+  let busy: PanelState["busy"] = null;
   // Per-repo allowlist (synced via repo_prefs) + merged repo→chat-count for the panel list.
   let prefs = new Map<string, boolean>();
   let repoCounts = new Map<string, number>();
@@ -79,6 +81,7 @@ export function activate(ctx: vscode.ExtensionContext) {
       repos: user ? buildRepoList() : [],
       repo: currentRepo(),
       status,
+      busy,
       statusText,
       stats,
       log,
@@ -114,6 +117,7 @@ export function activate(ctx: vscode.ExtensionContext) {
   const setStatus = (s: PanelState["status"], text: string) => {
     status = s;
     statusText = text;
+    if (s !== "syncing") busy = null; // a finished/failed op is no longer the active spinner
     refresh();
   };
 
@@ -126,6 +130,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     }
     if (status === "syncing") return; // never overlap syncs
     try {
+      busy = "push";
       setStatus("syncing", "Pushing chats…");
       const cfg = getConfig();
       out.appendLine(`upSync start: prefs=${prefs.size} bg=${!!opts?.background}`);
@@ -152,6 +157,7 @@ export function activate(ctx: vscode.ExtensionContext) {
   async function doPull() {
     if (!user) return void vscode.window.showInformationMessage("cursorsync: sign in first.");
     try {
+      busy = "pull";
       setStatus("syncing", "Pulling chats…");
       const n = await bridge.pullAndApply(prefs);
       stats.pulled += n;
