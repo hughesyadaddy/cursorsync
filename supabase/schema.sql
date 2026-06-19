@@ -26,11 +26,20 @@ create index if not exists cursor_kv_owner_source_idx on cursor_kv (owner_id, so
 create index if not exists cursor_kv_owner_repo_idx   on cursor_kv (owner_id, repo);
 
 -- Row Level Security: each authenticated user only sees their own rows.
+--   * FORCE so the policy applies even to the table owner (defense in depth).
+--   * Policy scoped to `authenticated`; the `anon` role is revoked entirely (least privilege),
+--     so an unauthenticated request — e.g. with the public anon key shipped in the extension —
+--     is denied at the grant layer before RLS is even evaluated.
+-- Verified with an adversarial test: a second authenticated user cannot read, write, or even
+-- target-by-id another user's rows; anon is fully locked out.
 alter table cursor_kv enable row level security;
+alter table cursor_kv force row level security;
+revoke all on cursor_kv from anon;
 
 drop policy if exists "own rows" on cursor_kv;
 create policy "own rows" on cursor_kv
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+  for all to authenticated
+  using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- Large/binary values are content-addressed in the private `cursor-blobs` Storage bucket at
 -- path `{owner_id}/{sha256}`. Each user may read/write only their own folder.
