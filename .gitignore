@@ -15,3 +15,7 @@ out/
 *.vscdb.backup
 /snapshots/
 /.cursorsync-cache/
+
+# Supabase CLI local artifacts
+supabase/.temp/
+supabase/.branches/

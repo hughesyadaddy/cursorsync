@@ -1,15 +1,18 @@
-# PowerSync sync rules for cursorsync.
-# One global bucket per user: every device that authenticates as the user receives all of that
-# user's chat rows. Conflict-free because the client upserts by primary key.
+# PowerSync Sync Streams for cursorsync (edition 3 — deployed format).
+# Every authenticated device receives all of the user's chat rows. Conflict-free because the
+# client upserts by primary key (the Cursor key).
 #
-# Apply via the PowerSync dashboard or `powersync` CLI for your instance.
+# Deployed to the live PowerSync `cursorsync` instance via the dashboard Sync Streams editor.
 
-bucket_definitions:
-  user_chats:
-    # token_parameters.user_id comes from the Supabase JWT used to authenticate the PowerSync client.
-    parameters: select request.user_id() as user_id
-    data:
-      - select * from cursor_kv where owner_id = bucket.user_id
-      - select * from cursor_workspace_index where owner_id = bucket.user_id
-      # Phase 2 — large; enable once blob sync is implemented and you accept the volume:
-      # - select * from cursor_blob where owner_id = bucket.user_id
+config:
+  edition: 3
+
+streams:
+  chats:
+    # auto_subscribe: every connected client syncs this stream by default.
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM cursor_kv
+      - SELECT * FROM cursor_workspace_index
+      # Phase 2 (large; enable with the agentKv blob work):
+      # - SELECT * FROM cursor_blob
