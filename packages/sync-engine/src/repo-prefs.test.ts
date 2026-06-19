@@ -8,10 +8,10 @@ import {
 } from "./repo-prefs.js";
 
 describe("repoEnabled", () => {
-  it("syncs everything when no prefs are set (back-compat with 'all chats')", () => {
+  it("syncs named repos by default; unlinked chats are off by default", () => {
     const prefs = new Map<string, boolean>();
     expect(repoEnabled("github.com/me/app", prefs)).toBe(true);
-    expect(repoEnabled(null, prefs)).toBe(true);
+    expect(repoEnabled(null, prefs)).toBe(false); // unlinked = opt-in
   });
 
   it("honors an explicit per-repo pref over the default", () => {
@@ -23,18 +23,10 @@ describe("repoEnabled", () => {
     expect(repoEnabled("github.com/me/secret", prefs)).toBe(false); // falls to default off
   });
 
-  it("treats the no-repo bucket as its own toggle, falling back to the default", () => {
-    expect(repoEnabled(null, new Map([[NO_REPO_KEY, false]]))).toBe(false);
-    expect(repoEnabled(null, new Map([[DEFAULT_PREF_KEY, false]]))).toBe(false);
-    expect(
-      repoEnabled(
-        null,
-        new Map([
-          [NO_REPO_KEY, true],
-          [DEFAULT_PREF_KEY, false],
-        ]),
-      ),
-    ).toBe(true);
+  it("treats unlinked chats as opt-in, ignoring the auto-sync-new default", () => {
+    expect(repoEnabled(null, new Map())).toBe(false); // off by default
+    expect(repoEnabled(null, new Map([[DEFAULT_PREF_KEY, true]]))).toBe(false); // not auto-synced
+    expect(repoEnabled(null, new Map([[NO_REPO_KEY, true]]))).toBe(true); // explicit opt-in
   });
 });
 

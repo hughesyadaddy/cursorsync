@@ -18,13 +18,17 @@ export function isConversationKey(key: string): boolean {
 
 /**
  * Whether a repo's chats should sync. Precedence: an explicit pref for the repo, then the "*"
- * default (auto-sync new), then `true` (sync everything until told otherwise — matches the
- * original "all chats" behavior, so existing users are unaffected until they opt out).
- * `repo` is null for conversations with no detectable git repo (the NO_REPO_KEY bucket).
+ * default (auto-sync new), then `true` (sync named repos until told otherwise).
+ *
+ * Exception: "unlinked" chats (no detectable repo — the NO_REPO_KEY bucket) are **opt-in**. They
+ * carry no project context, so they default OFF and ignore the auto-sync-new default; the user must
+ * explicitly enable them.
  */
 export function repoEnabled(repo: string | null, prefs: Map<string, boolean>): boolean {
-  const explicit = prefs.get(repo ?? NO_REPO_KEY);
+  const key = repo ?? NO_REPO_KEY;
+  const explicit = prefs.get(key);
   if (explicit !== undefined) return explicit;
+  if (key === NO_REPO_KEY) return false; // unlinked chats are opt-in only
   const fallback = prefs.get(DEFAULT_PREF_KEY);
   return fallback !== undefined ? fallback : true;
 }

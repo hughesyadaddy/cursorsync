@@ -58,7 +58,7 @@ export function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push(status$);
 
   const prettyRepo = (repo: string): string =>
-    repo === NO_REPO_KEY ? "Other (no repo)" : repo.split("/").slice(-2).join("/") || repo;
+    repo === NO_REPO_KEY ? "Unlinked chats" : repo.split("/").slice(-2).join("/") || repo;
 
   const buildRepoList = (): RepoEntry[] => {
     const cur = currentRepo();
@@ -73,7 +73,12 @@ export function activate(ctx: vscode.ExtensionContext) {
           folderCount: repoFolders.get(repo)?.size ?? 0,
         }),
       )
-      .sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.count - a.count);
+      .sort((a, b) => {
+        // Unlinked chats always sink to the bottom, regardless of count.
+        const au = a.repo === NO_REPO_KEY ? 1 : 0;
+        const bu = b.repo === NO_REPO_KEY ? 1 : 0;
+        return au - bu || Number(b.isCurrent) - Number(a.isCurrent) || b.count - a.count;
+      });
   };
 
   const refresh = () => {

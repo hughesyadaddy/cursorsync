@@ -31,14 +31,19 @@
   }
 
   function repoRow(r) {
+    const unlinked = r.repo === "";
     const badge = r.isCurrent ? ' <span class="badge">this window</span>' : "";
-    const folders = r.folderCount > 1 ? ` · ${r.folderCount} folders` : "";
+    const meta = unlinked
+      ? ' · <span class="muted">not tied to any repo</span>'
+      : r.folderCount > 1
+        ? ` · ${r.folderCount} folders`
+        : "";
     const details = `<button class="icon-btn" data-action="openDetails" data-repo="${esc(r.repo)}" title="Inspect — folders, conversations & where they live" aria-label="Inspect ${esc(r.label)}">${ICON.inspect}</button>`;
     return `
-      <div class="repo-row">
+      <div class="repo-row${unlinked ? " unlinked" : ""}">
         <div class="repo-info">
-          <div class="repo-name truncate" title="${esc(r.repo || "No repo")}">${esc(r.label)}${badge}</div>
-          <div class="repo-count">${Number(r.count).toLocaleString()} chat${r.count === 1 ? "" : "s"}${folders}</div>
+          <div class="repo-name truncate" title="${esc(r.repo || "Unlinked chats")}">${esc(r.label)}${badge}</div>
+          <div class="repo-count">${Number(r.count).toLocaleString()} chat${r.count === 1 ? "" : "s"}${meta}</div>
         </div>
         ${details}
         <div class="toggle sm ${r.enabled ? "on" : ""}" data-action="toggleRepo" data-repo="${esc(r.repo)}" role="switch" aria-checked="${r.enabled}"><div class="knob"></div></div>
