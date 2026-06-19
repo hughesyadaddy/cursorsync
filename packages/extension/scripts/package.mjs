@@ -32,7 +32,9 @@ writeFileSync(join(stage, "package.json"), JSON.stringify(pkg, null, 2));
 
 // 2. Copy build outputs and assets.
 for (const dir of ["dist", "media"]) cpSync(join(root, dir), join(stage, dir), { recursive: true });
-for (const f of ["README.md", "LICENSE", "CHANGELOG.md"]) {
+// The extension's own README is the Marketplace listing; LICENSE/CHANGELOG come from the repo root.
+if (existsSync(join(root, "README.md"))) cpSync(join(root, "README.md"), join(stage, "README.md"));
+for (const f of ["LICENSE", "CHANGELOG.md"]) {
   const src = join(root, "..", "..", f);
   if (existsSync(src)) cpSync(src, join(stage, f));
 }

@@ -35,18 +35,14 @@ Cursor state.vscdb  <->  [cursorsync bridge]  <->  PowerSync local SQLite
                                                   Supabase Postgres  (hub of truth + backup)
 ```
 
-## What we sync (measured on a real 27 GB Cursor DB)
+## What we sync
 
-| Namespace       | Rows | Size    | Synced     | Notes                                                                    |
-| --------------- | ---- | ------- | ---------- | ------------------------------------------------------------------------ |
-| `bubbleId`      | 802k | 10.8 GB | ✅         | individual chat messages, keyed by `{composerId}:{messageId}`            |
-| `composerData`  | 2.3k | 162 MB  | ✅         | conversation objects (title, ordering, file mentions)                    |
-| `agentKv:blob`  | 721k | 11.9 GB | ⏳ phase 2 | content-addressed agent tool-results & traces (JSON + binary, immutable) |
-| `checkpointId`  | 7k   | 1.9 GB  | ❌         | file-tree snapshots — regenerable, excluded                              |
-| `ofsContent`    | 6.5k | 114 MB  | ❌         | file content snapshots — excluded                                        |
-| diff / UI state | —    | small   | ❌         | per-machine ephemeral state                                              |
-
-The 27 GB on disk is mostly checkpoint/snapshot bloat. The actual conversations are ~11 GB.
+**Everything Cursor stores.** Cursor keeps all state as key/value rows in two SQLite tables of its
+global `state.vscdb` (`cursorDiskKV` + `ItemTable`) — messages (`bubbleId`), conversations
+(`composerData`), agent traces (`agentKv`, often binary), checkpoints, and UI state. cursorsync syncs
+every row generically: values that are valid UTF-8 (JSON) are stored as text, everything else is
+base64-encoded. Sync can be scoped to **all chats** or **just the current repo** (matched by git
+remote, via each conversation's embedded `workspaceIdentifier`).
 
 ## Repository layout
 
@@ -76,17 +72,23 @@ pnpm probe          # read-only footprint of your own Cursor DB
 
 Requires Node ≥ 20 ([`.nvmrc`](.nvmrc)) and pnpm ≥ 9.
 
+## The extension
+
+The [`cursorsync` extension](packages/extension/README.md) is the product: a sidebar panel with
+GitHub sign-in, an all-vs-repo scope toggle, "Sync all chats" / "Pull" buttons, live status, and an
+in-product safety backup. It packages to a `.vsix` (esbuild bundle + `better-sqlite3` rebuilt for
+Cursor's Electron ABI).
+
 ## Roadmap
 
-- [x] Read-only schema probe + extractor (validated)
-- [x] Up-sync delta detection (rowid watermark + composerData hash compare)
-- [x] pnpm workspace, CI, lint/format, package separation
-- [ ] Supabase schema + PowerSync sync rules applied to a live instance
-- [ ] Bridge: up-sync (Cursor SQLite -> PowerSync)
-- [ ] Bridge: down-sync (PowerSync -> Cursor SQLite) with safe writes + backups
-- [ ] Per-machine path rewriting (file mentions use absolute paths)
-- [ ] Cursor/VS Code extension packaging
-- [ ] Phase 2: `agentKv` blob sync (base64/bytea, content-addressed)
+- [x] Read-only extractor + per-source rowid delta detection (validated on a real 27 GB DB)
+- [x] All-namespace generic sync (messages, conversations, agentKv, checkpoints, UI state)
+- [x] Repo-scoping (sync all chats or isolate to the current repo, by git remote)
+- [x] Live Supabase backend (schema + RLS) and PowerSync instance
+- [x] Bridge: up-sync + down-sync with backup-first safe writes
+- [x] Extension app (GitHub OAuth, panel UI, auto-sync) + `.vsix` packaging
+- [ ] Enable the GitHub auth provider in Supabase (needs the OAuth client secret)
+- [ ] Publish to the VS Code / Cursor extension marketplace
 
 ## License
 
