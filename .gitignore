@@ -1,0 +1,16 @@
+node_modules/
+dist/
+out/
+*.vsix
+*.log
+.env
+.env.*
+.DS_Store
+
+# Never commit copies of Cursor databases or extracted chat data
+*.vscdb
+*.vscdb-wal
+*.vscdb-shm
+*.vscdb.backup
+/snapshots/
+/.cursorsync-cache/
