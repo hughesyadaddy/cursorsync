@@ -27,11 +27,13 @@ import {
   shouldSyncRow,
   shouldOffload,
   sha256Hex,
+  repoEnabled,
+  isConversationKey,
+  NO_REPO_KEY,
   type KvRecord,
   type SyncPolicy,
 } from "@cursorsync/sync-engine";
 import type { Transport } from "./transport.js";
-import type { SyncScope } from "./config.js";
 
 const WATERMARK_KEY = "cursorsync.watermark";
 const BACKUP_DIR = join(homedir(), "cursorsync-backups");
@@ -148,18 +150,19 @@ export class SyncBridge {
    * for a 27 GB database. The per-source rowid watermark is persisted after each pushed batch, so a
    * large first sync is resumable and later syncs only push new rows. `maxRows` caps a single run
    * (e.g. background auto-sync) so it never runs away.
+   *
+   * `prefs` is the per-repo allowlist: a conversation row only uploads if its repo is enabled.
+   * Non-conversation namespaces (agent traces, snapshots, UI) are governed solely by `policy`.
    */
   async upSync(
     ownerId: string,
-    scope: SyncScope,
-    currentRepo: string | null,
+    prefs: Map<string, boolean>,
     policy: SyncPolicy,
     maxRows = Infinity,
   ): Promise<UpResult> {
     const db = openReadonly();
     try {
-      const composerRepo =
-        scope === "repo" ? this.getComposerRepoMap(db) : new Map<string, string>();
+      const composerRepo = this.getComposerRepoMap(db);
       let state = this.getWatermark();
       let pushed = 0;
       let scanned = 0;
@@ -185,7 +188,7 @@ export class SyncBridge {
             scanned++;
             if (!shouldSyncRow(source, r.key, policy)) continue; // namespace include/exclude
             const repo = repoForKey(r.key, composerRepo);
-            if (scope === "repo" && repo !== currentRepo) continue; // isolate to this repo
+            if (isConversationKey(r.key) && !repoEnabled(repo, prefs)) continue; // disabled repo
             records.push(await this.encodeForUp(source, r.key, r.value ?? null, ownerId, repo));
           }
           if (records.length) pushed += await this.transport.push(records);
@@ -197,6 +200,32 @@ export class SyncBridge {
         }
       }
       return { pushed, scanned };
+    } finally {
+      db.close();
+    }
+  }
+
+  /**
+   * Conversation counts per repo from the local DB — the repos this machine has chatted in.
+   * Keyed by repo id, or NO_REPO_KEY for conversations with no detectable git repo. Cheap: it
+   * reuses the cached composer→repo map plus one COUNT.
+   */
+  localRepoCounts(): Map<string, number> {
+    const db = openReadonly();
+    try {
+      const map = this.getComposerRepoMap(db);
+      const counts = new Map<string, number>();
+      for (const repo of map.values()) counts.set(repo, (counts.get(repo) ?? 0) + 1);
+      const total = (
+        db
+          .prepare(
+            "SELECT COUNT(*) c FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData:~'",
+          )
+          .get() as { c: number }
+      ).c;
+      const noRepo = total - map.size;
+      if (noRepo > 0) counts.set(NO_REPO_KEY, noRepo);
+      return counts;
     } finally {
       db.close();
     }
@@ -244,11 +273,16 @@ export class SyncBridge {
     return written;
   }
 
-  /** Pull the user's rows (optionally one repo) and apply them locally, STREAMING page by page. */
-  async pullAndApply(scope: SyncScope, currentRepo: string | null): Promise<number> {
+  /**
+   * Pull the user's rows and apply them locally, STREAMING page by page. Conversation rows for a
+   * disabled repo are skipped so an excluded repo never lands on this machine, even if it was
+   * synced before being excluded.
+   */
+  async pullAndApply(prefs: Map<string, boolean>): Promise<number> {
     let total = 0;
-    for await (const page of this.transport.pullPages(scope === "repo" ? currentRepo : undefined)) {
-      total += await this.applyRecords(page);
+    for await (const page of this.transport.pullPages()) {
+      const allowed = page.filter((r) => !isConversationKey(r.ckey) || repoEnabled(r.repo, prefs));
+      total += await this.applyRecords(allowed);
     }
     return total;
   }

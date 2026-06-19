@@ -49,3 +49,30 @@ create policy "own blobs read" on storage.objects for select to authenticated
   using (bucket_id = 'cursor-blobs' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "own blobs insert" on storage.objects for insert to authenticated
   with check (bucket_id = 'cursor-blobs' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Per-repo sync preferences (which repos sync), synced across the user's devices.
+-- Reserved repo keys: '*' = default for repos with no explicit row (auto-sync new); '' = the
+-- "no repo" bucket (conversations not in a git repo). Same hardened RLS as cursor_kv.
+create table if not exists repo_prefs (
+  owner_id   uuid not null default auth.uid(),
+  repo       text not null,
+  enabled    boolean not null default true,
+  updated_at timestamptz not null default now(),
+  primary key (owner_id, repo)
+);
+alter table repo_prefs enable row level security;
+alter table repo_prefs force row level security;
+revoke all on repo_prefs from anon;
+drop policy if exists "own prefs" on repo_prefs;
+create policy "own prefs" on repo_prefs
+  for all to authenticated
+  using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+-- Distinct repos (with conversation counts) for the current user, for the panel's repo list.
+-- security invoker so RLS scopes the counts to the caller; never exposed to anon.
+create or replace function repo_counts()
+returns table(repo text, n bigint)
+language sql stable security invoker set search_path = public
+as $$ select repo, count(*) from cursor_kv where ckey like 'composerData:%' group by repo $$;
+revoke execute on function repo_counts() from anon, public;
+grant execute on function repo_counts() to authenticated;

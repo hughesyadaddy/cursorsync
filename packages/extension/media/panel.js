@@ -16,12 +16,8 @@
     down: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>',
   };
 
-  const SCOPE_HINT = {
-    all: "Syncing <b>every conversation across all your repos</b>.",
-    repo: "Syncing <b>only chats for the repo you have open</b>.",
-  };
-  const SCOPE_HELP =
-    "Auto-sync runs in the background either way. Scope just sets what it covers: All chats = your whole history; This repo = only the current project (matched by git remote).";
+  const REPO_HELP =
+    "Pick which repos sync. Chats are tagged by their git repo, so you can sync any subset from any window. 'Auto-sync new repos' sets the default for repos you haven't chosen yet.";
 
   function signedOut() {
     return `
@@ -32,9 +28,35 @@
       </div>`;
   }
 
+  function repoRow(r) {
+    const badge = r.isCurrent ? ' <span class="badge">this window</span>' : "";
+    return `
+      <div class="repo-row">
+        <div class="repo-info">
+          <div class="repo-name truncate" title="${esc(r.repo || "No repo")}">${esc(r.label)}${badge}</div>
+          <div class="repo-count">${Number(r.count).toLocaleString()} chat${r.count === 1 ? "" : "s"}</div>
+        </div>
+        <div class="toggle sm ${r.enabled ? "on" : ""}" data-action="toggleRepo" data-repo="${esc(r.repo)}" role="switch" aria-checked="${r.enabled}"><div class="knob"></div></div>
+      </div>`;
+  }
+
+  function reposCard(s) {
+    const rows = (s.repos || []).map(repoRow).join("");
+    const empty =
+      '<div class="repo-empty muted">No repos found yet — run a sync to populate this list.</div>';
+    return `
+      <div class="card">
+        <div class="row-label">Synced repos <span class="help" title="${esc(REPO_HELP)}">?</span></div>
+        <div class="stat-row between auto-new">
+          <span>Auto-sync new repos</span>
+          <div class="toggle ${s.autoSyncNew ? "on" : ""}" data-action="toggleAutoNew" role="switch" aria-checked="${s.autoSyncNew}"><div class="knob"></div></div>
+        </div>
+        <div class="repo-list">${rows || empty}</div>
+      </div>`;
+  }
+
   function signedIn(s) {
     const syncing = s.status === "syncing";
-    const repo = s.repo ? esc(s.repo) : "no repo detected";
     const lastSync = s.stats.lastSync ? esc(s.stats.lastSync) : "never";
     return `
       <div class="card user-card">
@@ -46,18 +68,7 @@
         <button class="link" data-action="signOut">Sign out</button>
       </div>
 
-      <div class="card">
-        <div class="row-label">Sync scope <span class="help" title="${esc(SCOPE_HELP)}">?</span></div>
-        <div class="seg">
-          <button class="seg-btn ${s.scope === "all" ? "active" : ""}" data-action="setScope" data-value="all">All chats</button>
-          <button class="seg-btn ${s.scope === "repo" ? "active" : ""}" data-action="setScope" data-value="repo">This repo</button>
-        </div>
-        <p class="scope-hint">${SCOPE_HINT[s.scope] ?? ""}</p>
-        <div class="repo-line">
-          <span class="repo-key">Repo</span>
-          <span class="repo-val ${s.repo ? "" : "muted"} truncate" title="${repo}">${repo}</span>
-        </div>
-      </div>
+      ${reposCard(s)}
 
       ${s.status === "error" ? `<div class="banner error">${esc(s.statusText)}</div>` : ""}
 
@@ -96,11 +107,17 @@
     const el = e.target instanceof Element ? e.target.closest("[data-action]") : null;
     if (!el || !state) return;
     const action = el.getAttribute("data-action");
-    if (action === "setScope")
-      vscode.postMessage({ type: "setScope", value: el.getAttribute("data-value") });
-    else if (action === "toggleAuto")
+    if (action === "toggleRepo") {
+      const repo = el.getAttribute("data-repo");
+      const entry = (state.repos || []).find((r) => r.repo === repo);
+      vscode.postMessage({ type: "setRepoEnabled", repo, value: !(entry && entry.enabled) });
+    } else if (action === "toggleAutoNew") {
+      vscode.postMessage({ type: "setAutoSyncNew", value: !state.autoSyncNew });
+    } else if (action === "toggleAuto") {
       vscode.postMessage({ type: "setAutoSync", value: !state.autoSync });
-    else vscode.postMessage({ type: action });
+    } else {
+      vscode.postMessage({ type: action });
+    }
   });
 
   window.addEventListener("message", (e) => {

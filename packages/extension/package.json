@@ -2,7 +2,7 @@
   "name": "cursorsync",
   "displayName": "Cursor Sync",
   "description": "Sync your Cursor chat history across all your devices.",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "license": "MIT",
   "publisher": "lokeylabs",
   "repository": {
@@ -82,19 +82,6 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically push new chats and pull remote changes in the background."
-        },
-        "cursorsync.syncScope": {
-          "type": "string",
-          "enum": [
-            "all",
-            "repo"
-          ],
-          "enumDescriptions": [
-            "Sync every chat across all your repos.",
-            "Only sync chats that belong to the current repo (matched by git remote)."
-          ],
-          "default": "all",
-          "description": "Whether to sync all chats or isolate sync to the current repository. Toggleable from the cursorsync panel."
         },
         "cursorsync.syncAgentArtifacts": {
           "type": "boolean",

@@ -2,12 +2,23 @@ import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
 import { buildPanelHtml } from "./panel-html.js";
 import type { AuthUser } from "./auth.js";
-import type { SyncScope } from "./config.js";
+
+/** One row in the panel's "Synced repos" list. */
+export interface RepoEntry {
+  /** Repo id (git remote), or "" for the no-repo bucket. */
+  repo: string;
+  label: string;
+  count: number;
+  enabled: boolean;
+  /** The repo open in this window (highlighted). */
+  isCurrent: boolean;
+}
 
 export interface PanelState {
   user: AuthUser | null;
-  scope: SyncScope;
   autoSync: boolean;
+  autoSyncNew: boolean;
+  repos: RepoEntry[];
   repo: string | null;
   status: "idle" | "syncing" | "error";
   statusText: string;
@@ -20,7 +31,8 @@ export interface PanelActions {
   signOut(): void;
   syncNow(): void;
   pullNow(): void;
-  setScope(scope: SyncScope): void;
+  setRepoEnabled(repo: string, enabled: boolean): void;
+  setAutoSyncNew(enabled: boolean): void;
   setAutoSync(value: boolean): void;
 }
 
@@ -39,7 +51,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
     this.view = view;
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     view.webview.html = this.html(view.webview);
-    view.webview.onDidReceiveMessage((msg: { type: string; value?: unknown }) => {
+    view.webview.onDidReceiveMessage((msg: { type: string; value?: unknown; repo?: string }) => {
       switch (msg.type) {
         case "ready":
           if (this.last) this.postState(this.last);
@@ -52,8 +64,10 @@ export class PanelProvider implements vscode.WebviewViewProvider {
           return this.actions.syncNow();
         case "pullNow":
           return this.actions.pullNow();
-        case "setScope":
-          return this.actions.setScope(msg.value as SyncScope);
+        case "setRepoEnabled":
+          return this.actions.setRepoEnabled(msg.repo ?? "", msg.value as boolean);
+        case "setAutoSyncNew":
+          return this.actions.setAutoSyncNew(msg.value as boolean);
         case "setAutoSync":
           return this.actions.setAutoSync(msg.value as boolean);
       }

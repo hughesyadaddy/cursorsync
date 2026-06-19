@@ -79,8 +79,8 @@ export class Transport {
     }, "downloadBlob");
   }
 
-  /** Yield the user's rows (optionally one repo) one keyset page at a time — memory stays bounded. */
-  async *pullPages(repo?: string | null, pageSize = 1000): AsyncGenerator<KvRecord[]> {
+  /** Yield the user's rows one keyset page at a time — memory stays bounded. */
+  async *pullPages(pageSize = 1000): AsyncGenerator<KvRecord[]> {
     let lastId: string | null = null;
     for (;;) {
       const page = await withRetry(async () => {
@@ -90,7 +90,6 @@ export class Transport {
           .order("id", { ascending: true })
           .limit(pageSize);
         if (lastId !== null) q = q.gt("id", lastId);
-        if (repo) q = q.eq("repo", repo);
         const { data, error } = await q;
         if (error) throw new Error(error.message);
         return (data ?? []) as KvRecord[];
@@ -101,6 +100,37 @@ export class Transport {
       lastId = last.id;
       if (page.length < pageSize) return;
     }
+  }
+
+  /** Distinct repos with chat-row counts for this user (RLS-scoped). Null repo = no-repo bucket. */
+  async repoCounts(): Promise<Array<{ repo: string | null; n: number }>> {
+    return withRetry(async () => {
+      const { data, error } = await this.client.rpc("repo_counts");
+      if (error) throw new Error(error.message);
+      return (data ?? []) as Array<{ repo: string | null; n: number }>;
+    }, "repoCounts");
+  }
+
+  /** The user's per-repo sync preferences (synced across devices). */
+  async getRepoPrefs(): Promise<Array<{ repo: string; enabled: boolean }>> {
+    return withRetry(async () => {
+      const { data, error } = await this.client.from("repo_prefs").select("repo,enabled");
+      if (error) throw new Error(error.message);
+      return (data ?? []) as Array<{ repo: string; enabled: boolean }>;
+    }, "getRepoPrefs");
+  }
+
+  /** Set one repo's sync preference. */
+  async setRepoPref(ownerId: string, repo: string, enabled: boolean): Promise<void> {
+    await withRetry(async () => {
+      const { error } = await this.client
+        .from("repo_prefs")
+        .upsert(
+          { owner_id: ownerId, repo, enabled, updated_at: new Date().toISOString() },
+          { onConflict: "owner_id,repo" },
+        );
+      if (error) throw new Error(error.message);
+    }, "setRepoPref");
   }
 
   /** Subscribe to live row changes for this user. Returns the channel (call `.unsubscribe()`). */

@@ -4,9 +4,15 @@ import { repoIdForPath } from "@cursorsync/cursor-store";
 import { AuthManager, type AuthUser } from "./auth.js";
 import { Transport } from "./transport.js";
 import { SyncBridge } from "./bridge.js";
-import { PanelProvider, type PanelState } from "./webview.js";
-import { getConfig, updateConfig, type SyncScope } from "./config.js";
-import type { KvRecord } from "@cursorsync/sync-engine";
+import { PanelProvider, type PanelState, type RepoEntry } from "./webview.js";
+import { getConfig, updateConfig } from "./config.js";
+import {
+  repoEnabled,
+  autoSyncNew,
+  DEFAULT_PREF_KEY,
+  NO_REPO_KEY,
+  type KvRecord,
+} from "@cursorsync/sync-engine";
 
 export function activate(ctx: vscode.ExtensionContext) {
   const deviceId = getDeviceId(ctx);
@@ -20,6 +26,9 @@ export function activate(ctx: vscode.ExtensionContext) {
   const log: string[] = [];
   let status: PanelState["status"] = "idle";
   let statusText = "Ready";
+  // Per-repo allowlist (synced via repo_prefs) + merged repo→chat-count for the panel list.
+  let prefs = new Map<string, boolean>();
+  let repoCounts = new Map<string, number>();
 
   // LogOutputChannel — visible via Output → "cursorsync" AND persisted to disk for diagnostics.
   const out = vscode.window.createOutputChannel("cursorsync", { log: true });
@@ -40,15 +49,34 @@ export function activate(ctx: vscode.ExtensionContext) {
   status$.command = "cursorsync.focus";
   ctx.subscriptions.push(status$);
 
+  const prettyRepo = (repo: string): string =>
+    repo === NO_REPO_KEY ? "Other (no repo)" : repo.split("/").slice(-2).join("/") || repo;
+
+  const buildRepoList = (): RepoEntry[] => {
+    const cur = currentRepo();
+    return [...repoCounts.entries()]
+      .map(
+        ([repo, count]): RepoEntry => ({
+          repo,
+          label: prettyRepo(repo),
+          count,
+          enabled: repoEnabled(repo === NO_REPO_KEY ? null : repo, prefs),
+          isCurrent: repo !== NO_REPO_KEY && repo === cur,
+        }),
+      )
+      .sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.count - a.count);
+  };
+
   const refresh = () => {
     const cfg = getConfig();
-    status$.text = user ? "$(sync) cursorsync" : "$(sync-ignored) cursorsync";
-    status$.tooltip = user ? `cursorsync: ${statusText}` : "cursorsync: sign in";
+    status$.text = user ? "$(sync) Cursor Sync" : "$(sync-ignored) Cursor Sync";
+    status$.tooltip = user ? `Cursor Sync: ${statusText}` : "Cursor Sync: sign in";
     status$.show();
     panel.postState({
       user,
-      scope: cfg.syncScope,
       autoSync: cfg.autoSync,
+      autoSyncNew: autoSyncNew(prefs),
+      repos: user ? buildRepoList() : [],
       repo: currentRepo(),
       status,
       statusText,
@@ -56,6 +84,32 @@ export function activate(ctx: vscode.ExtensionContext) {
       log,
     });
   };
+
+  /** Load per-repo prefs + the merged repo list (local + synced) from the backend, then refresh. */
+  async function loadRepoState(): Promise<void> {
+    if (!user) {
+      prefs = new Map();
+      repoCounts = new Map();
+      return refresh();
+    }
+    try {
+      const [prefRows, backendCounts] = await Promise.all([
+        transport.getRepoPrefs(),
+        transport.repoCounts(),
+      ]);
+      prefs = new Map(prefRows.map((p) => [p.repo, p.enabled]));
+      const counts = new Map<string, number>();
+      for (const [repo, n] of bridge.localRepoCounts()) counts.set(repo, n);
+      for (const { repo, n } of backendCounts) {
+        const key = repo ?? NO_REPO_KEY;
+        counts.set(key, Math.max(counts.get(key) ?? 0, Number(n)));
+      }
+      repoCounts = counts;
+    } catch (e) {
+      out.appendLine(`loadRepoState error: ${(e as Error).message}`);
+    }
+    refresh();
+  }
 
   const setStatus = (s: PanelState["status"], text: string) => {
     status = s;
@@ -74,32 +128,20 @@ export function activate(ctx: vscode.ExtensionContext) {
     try {
       setStatus("syncing", "Pushing chats…");
       const cfg = getConfig();
-      const repo = currentRepo();
-      out.appendLine(
-        `upSync start: scope=${cfg.syncScope} repo=${repo ?? "(none)"} bg=${!!opts?.background}`,
-      );
+      out.appendLine(`upSync start: prefs=${prefs.size} bg=${!!opts?.background}`);
       const r = await bridge.upSync(
         user.id,
-        cfg.syncScope,
-        repo,
+        prefs,
         cfg.policy,
         opts?.background ? BG_CAP : Infinity,
       );
       stats.pushed += r.pushed;
       stats.lastSync = new Date().toLocaleString();
       out.appendLine(`upSync done: scanned=${r.scanned} pushed=${r.pushed}`);
-      if (r.pushed > 0 || !opts?.background) addLog(`Pushed ${r.pushed} rows (${cfg.syncScope})`);
-      if (cfg.syncScope === "repo" && r.pushed === 0 && !opts?.background) {
-        addLog(`No chats matched this repo (${repo ?? "no repo open"}). Try scope "All chats".`);
-      }
-      setStatus(
-        "idle",
-        r.pushed
-          ? `Pushed ${r.pushed}`
-          : cfg.syncScope === "repo"
-            ? "No chats for this repo"
-            : "Up to date",
-      );
+      if (r.pushed > 0 || !opts?.background) addLog(`Pushed ${r.pushed} rows`);
+      setStatus("idle", r.pushed ? `Pushed ${r.pushed}` : "Up to date");
+      // Refresh the repo list after a manual sync — new repos may now be visible.
+      if (!opts?.background) void loadRepoState();
     } catch (e) {
       out.appendLine(`upSync ERROR: ${(e as Error).stack ?? (e as Error).message}`);
       addLog(`Push error: ${(e as Error).message}`);
@@ -111,8 +153,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     if (!user) return void vscode.window.showInformationMessage("cursorsync: sign in first.");
     try {
       setStatus("syncing", "Pulling chats…");
-      const cfg = getConfig();
-      const n = await bridge.pullAndApply(cfg.syncScope, currentRepo());
+      const n = await bridge.pullAndApply(prefs);
       stats.pulled += n;
       stats.lastSync = new Date().toLocaleString();
       addLog(`Pulled ${n} rows`);
@@ -131,6 +172,28 @@ export function activate(ctx: vscode.ExtensionContext) {
     } catch (e) {
       addLog(`Pull error: ${(e as Error).message}`);
       setStatus("error", "Pull failed");
+    }
+  }
+
+  // Enabling a repo (or auto-sync-new) widens what should sync, so the rows it previously skipped
+  // sit below the watermark — reset it and resync to pick them up. Disabling just stops future syncs.
+  async function applyPrefChange(repo: string, enabled: boolean): Promise<void> {
+    if (!user) return;
+    prefs.set(repo, enabled);
+    refresh();
+    try {
+      await transport.setRepoPref(user.id, repo, enabled);
+      addLog(
+        repo === DEFAULT_PREF_KEY
+          ? `Auto-sync new repos ${enabled ? "on" : "off"}`
+          : `${enabled ? "Enabled" : "Disabled"} sync for ${prettyRepo(repo)}`,
+      );
+      if (enabled) {
+        await bridge.resetWatermark();
+        void doUpSync();
+      }
+    } catch (e) {
+      addLog(`Pref error: ${(e as Error).message}`);
     }
   }
 
@@ -178,7 +241,8 @@ export function activate(ctx: vscode.ExtensionContext) {
     signOut: () => auth.signOut(),
     syncNow: () => void doUpSync(),
     pullNow: () => void doPull(),
-    setScope: (scope: SyncScope) => updateConfig("syncScope", scope).then(refresh),
+    setRepoEnabled: (repo: string, enabled: boolean) => void applyPrefChange(repo, enabled),
+    setAutoSyncNew: (enabled: boolean) => void applyPrefChange(DEFAULT_PREF_KEY, enabled),
     setAutoSync: (v: boolean) =>
       updateConfig("autoSync", v).then(() => (subscribeRealtime(), refresh())),
   });
@@ -214,7 +278,7 @@ export function activate(ctx: vscode.ExtensionContext) {
       user = u;
       addLog(u ? `Signed in as ${u.userName ?? u.id}` : "Signed out");
       subscribeRealtime();
-      refresh();
+      void loadRepoState();
       // Don't auto-push the whole DB on sign-in. The user kicks off the first (large) sync with
       // "Sync all chats now"; the background timer then keeps it incremental.
     }),
@@ -232,7 +296,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     .then((u) => {
       user = u;
       subscribeRealtime();
-      refresh();
+      void loadRepoState();
     })
     .catch((e: unknown) => out.appendLine(`session restore error: ${(e as Error).message}`));
   refresh();

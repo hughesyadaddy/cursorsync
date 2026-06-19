@@ -190,59 +190,52 @@ body {
   padding: 2px 0;
 }
 
-/* ---- scope ---- */
-.seg {
+/* ---- synced repos ---- */
+.auto-new {
+  padding-bottom: 9px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.repo-list {
   display: flex;
-  background: var(--vscode-input-background, rgba(127, 127, 127, 0.12));
-  border-radius: 8px;
-  padding: 3px;
-  gap: 3px;
+  flex-direction: column;
 }
-.seg-btn {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 7px 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  opacity: 0.65;
-  white-space: nowrap;
-}
-.seg-btn.active {
-  background: var(--grad);
-  color: #fff;
-  opacity: 1;
-  font-weight: 600;
-}
-.scope-hint {
-  font-size: 11px;
-  opacity: 0.6;
-  line-height: 1.45;
-  margin: 9px 0 0;
-}
-.repo-line {
+.repo-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 9px;
-  font-size: 12px;
+  gap: 10px;
+  padding: 8px 0;
 }
-.repo-key {
-  flex: 0 0 auto;
-  opacity: 0.55;
+.repo-row + .repo-row {
+  border-top: 1px solid var(--border);
 }
-.repo-val {
+.repo-info {
   flex: 1 1 auto;
   min-width: 0;
-  font-weight: 600;
-  text-align: right;
 }
-.repo-val.muted {
-  font-weight: 400;
-  opacity: 0.6;
+.repo-name {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.repo-count {
+  font-size: 11px;
+  opacity: 0.55;
+}
+.badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--grad);
+  color: #fff;
+  vertical-align: middle;
+}
+.repo-empty {
+  padding: 8px 0;
+  font-size: 12px;
 }
 
 /* ---- status / stats ---- */
@@ -339,6 +332,18 @@ body {
 }
 .toggle.on .knob {
   left: 18px;
+}
+.toggle.sm {
+  width: 32px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+.toggle.sm .knob {
+  width: 14px;
+  height: 14px;
+}
+.toggle.sm.on .knob {
+  left: 16px;
 }
 
 /* ---- log / hero ---- */

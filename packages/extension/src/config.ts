@@ -1,13 +1,10 @@
 import * as vscode from "vscode";
 import type { SyncPolicy } from "@cursorsync/sync-engine";
 
-export type SyncScope = "all" | "repo";
-
 export interface ExtensionConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
   autoSync: boolean;
-  syncScope: SyncScope;
   policy: SyncPolicy;
 }
 
@@ -18,7 +15,6 @@ export function getConfig(): ExtensionConfig {
     supabaseUrl: c.get<string>("supabaseUrl", ""),
     supabaseAnonKey: c.get<string>("supabaseAnonKey", ""),
     autoSync: c.get<boolean>("autoSync", true),
-    syncScope: c.get<SyncScope>("syncScope", "all"),
     policy: {
       agentArtifacts: c.get<boolean>("syncAgentArtifacts", true),
       fileSnapshots: c.get<boolean>("syncFileSnapshots", false),
