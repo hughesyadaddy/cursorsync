@@ -83,6 +83,7 @@
       <button class="btn btn-secondary ${s.busy === "pull" ? "loading" : ""}" data-action="pullNow" ${syncing ? "disabled" : ""}>
         ${ICON.down} Pull from cloud
       </button>
+      <button class="textlink" data-action="resyncAll" ${syncing ? "disabled" : ""}>${ICON.sync} Re-sync everything (backfill)</button>
 
       <div class="card">
         <div class="stat-row"><span class="dot ${esc(s.status)}"></span><span class="truncate">${esc(s.statusText)}</span></div>

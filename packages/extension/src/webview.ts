@@ -39,6 +39,7 @@ export interface PanelActions {
   setAutoSyncNew(enabled: boolean): void;
   setAutoSync(value: boolean): void;
   openDetails(repo: string): void;
+  resyncAll(): void;
 }
 
 /** The cursorsync sidebar panel. */
@@ -77,6 +78,8 @@ export class PanelProvider implements vscode.WebviewViewProvider {
           return this.actions.setAutoSync(msg.value as boolean);
         case "openDetails":
           return this.actions.openDetails(msg.repo ?? "");
+        case "resyncAll":
+          return this.actions.resyncAll();
       }
     });
   }

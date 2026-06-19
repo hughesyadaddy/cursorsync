@@ -267,6 +267,23 @@ export function activate(ctx: vscode.ExtensionContext) {
     }
   }
 
+  // Backfill: rewind the watermark and re-scan from zero so every enabled repo's history uploads.
+  // Safe and dup-free — matching ids upsert — but a first run can be large.
+  async function doResyncAll(): Promise<void> {
+    if (!user) return void vscode.window.showInformationMessage("Cursor Sync: sign in first.");
+    if (status === "syncing")
+      return void vscode.window.showInformationMessage("Cursor Sync: a sync is already running.");
+    const pick = await vscode.window.showWarningMessage(
+      "Re-sync everything? This re-scans all enabled chats and backfills the cloud. Duplicates are impossible (matching chats just update in place), but the first pass can take a while.",
+      { modal: true },
+      "Re-sync",
+    );
+    if (pick !== "Re-sync") return;
+    await bridge.resetWatermark();
+    addLog("Re-syncing everything from scratch…");
+    await doUpSync();
+  }
+
   // Debounced down-sync: coalesce a burst of live records into one DB transaction.
   let downBuffer: KvRecord[] = [];
   let flushTimer: NodeJS.Timeout | undefined;
@@ -322,6 +339,7 @@ export function activate(ctx: vscode.ExtensionContext) {
         ...details,
       });
     },
+    resyncAll: () => void doResyncAll(),
     setAutoSync: (v: boolean) =>
       updateConfig("autoSync", v).then(() => (subscribeRealtime(), refresh())),
   });
@@ -339,6 +357,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand("cursorsync.signOut", () => auth.signOut()),
     vscode.commands.registerCommand("cursorsync.syncNow", () => doUpSync()),
     vscode.commands.registerCommand("cursorsync.pullNow", () => doPull()),
+    vscode.commands.registerCommand("cursorsync.resyncAll", () => doResyncAll()),
     vscode.commands.registerCommand("cursorsync.backupNow", async () => {
       setStatus("syncing", "Backing up…");
       const p = await bridge.ensureBackup(true);

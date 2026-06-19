@@ -2,7 +2,7 @@
   "name": "cursorsync",
   "displayName": "Cursor Sync",
   "description": "Sync your Cursor chat history across all your devices.",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "license": "MIT",
   "publisher": "lokeylabs",
   "repository": {
@@ -55,6 +55,10 @@
       {
         "command": "cursorsync.pullNow",
         "title": "Cursor Sync: Pull chats from cloud"
+      },
+      {
+        "command": "cursorsync.resyncAll",
+        "title": "Cursor Sync: Re-sync everything (backfill)"
       },
       {
         "command": "cursorsync.backupNow",
