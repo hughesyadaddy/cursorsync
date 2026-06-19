@@ -57,16 +57,27 @@ export function activate(ctx: vscode.ExtensionContext) {
     refresh();
   };
 
-  async function doUpSync() {
-    if (!user) return void vscode.window.showInformationMessage("cursorsync: sign in first.");
+  // Background ticks push at most this many rows so they never run away; the manual button is uncapped.
+  const BG_CAP = 5000;
+  async function doUpSync(opts?: { background?: boolean }) {
+    if (!user) {
+      if (!opts?.background) vscode.window.showInformationMessage("cursorsync: sign in first.");
+      return;
+    }
+    if (status === "syncing") return; // never overlap syncs
     try {
       setStatus("syncing", "Pushing chats…");
       const cfg = getConfig();
-      const r = await bridge.upSync(user.id, cfg.syncScope, currentRepo());
+      const r = await bridge.upSync(
+        user.id,
+        cfg.syncScope,
+        currentRepo(),
+        opts?.background ? BG_CAP : Infinity,
+      );
       stats.pushed += r.pushed;
       stats.lastSync = new Date().toLocaleString();
-      addLog(`Pushed ${r.pushed} rows (${cfg.syncScope})`);
-      setStatus("idle", `Pushed ${r.pushed}`);
+      if (r.pushed > 0 || !opts?.background) addLog(`Pushed ${r.pushed} rows (${cfg.syncScope})`);
+      setStatus("idle", r.pushed ? `Pushed ${r.pushed}` : "Up to date");
     } catch (e) {
       addLog(`Push error: ${(e as Error).message}`);
       setStatus("error", "Push failed");
@@ -170,18 +181,18 @@ export function activate(ctx: vscode.ExtensionContext) {
       vscode.commands.executeCommand("cursorsync.panel.focus"),
     ),
     auth.onChange((u) => {
-      const wasSignedIn = !!user;
       user = u;
       addLog(u ? `Signed in as ${u.userName ?? u.id}` : "Signed out");
       subscribeRealtime();
       refresh();
-      if (u && !wasSignedIn && getConfig().autoSync) void doUpSync();
+      // Don't auto-push the whole DB on sign-in. The user kicks off the first (large) sync with
+      // "Sync all chats now"; the background timer then keeps it incremental.
     }),
   );
 
-  // Periodic up-sync of local changes.
+  // Periodic incremental up-sync (capped per tick).
   const timer = setInterval(() => {
-    if (user && getConfig().autoSync && status !== "syncing") void doUpSync();
+    if (user && getConfig().autoSync && status !== "syncing") void doUpSync({ background: true });
   }, 30_000);
   ctx.subscriptions.push({ dispose: () => clearInterval(timer) });
 

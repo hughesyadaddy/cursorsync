@@ -5,7 +5,8 @@ import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:f
 import {
   openReadonly,
   defaultGlobalDbPath,
-  detectChanges,
+  SOURCES,
+  tableForSource,
   buildComposerRepoMap,
   repoForKey,
   applyRows,
@@ -22,6 +23,8 @@ const WATERMARK_KEY = "cursorsync.watermark";
 const BACKUP_DIR = join(homedir(), "cursorsync-backups");
 const BACKUP_MAX_AGE_MS = 12 * 60 * 60 * 1000; // back up at most every 12h
 const BACKUP_KEEP = 3;
+// Stream the up-sync in small batches so we never hold the whole DB in memory.
+const UP_BATCH = 400;
 
 export interface UpResult {
   pushed: number;
@@ -87,23 +90,64 @@ export class SyncBridge {
     await this.ctx.globalState.update(WATERMARK_KEY, s);
   }
 
-  /** Push changed local rows to the cloud. */
-  async upSync(ownerId: string, scope: SyncScope, currentRepo: string | null): Promise<UpResult> {
+  /**
+   * Push changed local rows to the cloud, STREAMING in small batches so memory stays bounded even
+   * for a 27 GB database. The per-source rowid watermark is persisted after each pushed batch, so a
+   * large first sync is resumable and later syncs only push new rows. `maxRows` caps a single run
+   * (e.g. background auto-sync) so it never runs away.
+   */
+  async upSync(
+    ownerId: string,
+    scope: SyncScope,
+    currentRepo: string | null,
+    maxRows = Infinity,
+  ): Promise<UpResult> {
     const db = openReadonly();
     try {
-      const { changed, next } = detectChanges(db, this.getWatermark());
       const composerRepo = scope === "repo" ? buildComposerRepoMap(db) : new Map<string, string>();
+      let state = this.getWatermark();
+      let pushed = 0;
+      let scanned = 0;
 
-      const records: KvRecord[] = [];
-      for (const row of changed) {
-        const repo = repoForKey(row.key, composerRepo);
-        if (scope === "repo" && repo !== currentRepo) continue; // isolate to this repo
-        records.push(toKvRecord(row, ownerId, this.deviceId, repo));
+      for (const source of SOURCES) {
+        const table = tableForSource(source);
+        const stmt = db.prepare(
+          `SELECT rowid AS rowid, key, value FROM "${table}" WHERE rowid > ? ORDER BY rowid ASC LIMIT ?`,
+        );
+        let since = state.rowids[source] ?? 0;
+        for (;;) {
+          if (scanned >= maxRows) return { pushed, scanned };
+          const rows = stmt.all(since, UP_BATCH) as Array<{
+            rowid: number;
+            key: string;
+            value: Buffer | string | null;
+          }>;
+          if (rows.length === 0) break;
+
+          const records: KvRecord[] = [];
+          for (const r of rows) {
+            since = r.rowid;
+            scanned++;
+            const repo = repoForKey(r.key, composerRepo);
+            if (scope === "repo" && repo !== currentRepo) continue; // isolate to this repo
+            records.push(
+              toKvRecord(
+                { source, key: r.key, rowid: r.rowid, value: r.value ?? null },
+                ownerId,
+                this.deviceId,
+                repo,
+              ),
+            );
+          }
+          if (records.length) pushed += await this.transport.push(records);
+
+          // Persist progress per batch — resumable, and frees the batch from memory.
+          state = { rowids: { ...state.rowids, [source]: since } };
+          await this.setWatermark(state);
+          if (rows.length < UP_BATCH) break;
+        }
       }
-
-      const pushed = await this.transport.push(records);
-      await this.setWatermark(next); // only advance after a successful push
-      return { pushed, scanned: changed.length };
+      return { pushed, scanned };
     } finally {
       db.close();
     }
