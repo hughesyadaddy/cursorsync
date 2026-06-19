@@ -7,7 +7,7 @@ import { getConfig } from "./config.js";
  * (PKCE flow). The session is persisted in VS Code SecretStorage — never on disk in plaintext.
  *
  * Requires (cloud side): GitHub provider enabled in Supabase Auth, and the redirect URL
- * `${uriScheme}://hughesyadaddy.cursorsync/auth-callback` added to Supabase's allow-list.
+ * `${uriScheme}://lokeylabs.cursorsync/auth-callback` added to Supabase's allow-list.
  */
 
 const CALLBACK_PATH = "/auth-callback";
@@ -55,7 +55,7 @@ export class AuthManager {
   }
 
   private redirectTo(): string {
-    return `${vscode.env.uriScheme}://hughesyadaddy.cursorsync${CALLBACK_PATH}`;
+    return `${vscode.env.uriScheme}://lokeylabs.cursorsync${CALLBACK_PATH}`;
   }
 
   /** Start GitHub OAuth: open the consent page in the browser. Completes via handleUri(). */
