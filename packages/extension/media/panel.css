@@ -237,6 +237,23 @@ body {
   padding: 8px 0;
   font-size: 12px;
 }
+.icon-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  opacity: 0.55;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.18));
+}
 
 /* ---- status / stats ---- */
 .banner {

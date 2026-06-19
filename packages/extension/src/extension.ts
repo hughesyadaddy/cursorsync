@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { hostname } from "node:os";
+import { existsSync } from "node:fs";
 import { repoIdForPath } from "@cursorsync/cursor-store";
 import { AuthManager, type AuthUser } from "./auth.js";
 import { Transport } from "./transport.js";
@@ -31,6 +32,8 @@ export function activate(ctx: vscode.ExtensionContext) {
   // Per-repo allowlist (synced via repo_prefs) + merged repo→chat-count for the panel list.
   let prefs = new Map<string, boolean>();
   let repoCounts = new Map<string, number>();
+  // Representative local folder path per repo, for "reveal in Finder" (local repos only).
+  let repoPaths = new Map<string, string>();
 
   // LogOutputChannel — visible via Output → "cursorsync" AND persisted to disk for diagnostics.
   const out = vscode.window.createOutputChannel("cursorsync", { log: true });
@@ -64,6 +67,7 @@ export function activate(ctx: vscode.ExtensionContext) {
           count,
           enabled: repoEnabled(repo === NO_REPO_KEY ? null : repo, prefs),
           isCurrent: repo !== NO_REPO_KEY && repo === cur,
+          path: repoPaths.get(repo) ?? null,
         }),
       )
       .sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.count - a.count);
@@ -101,8 +105,10 @@ export function activate(ctx: vscode.ExtensionContext) {
         transport.repoCounts(),
       ]);
       prefs = new Map(prefRows.map((p) => [p.repo, p.enabled]));
+      const local = bridge.localRepos();
+      repoPaths = local.paths;
       const counts = new Map<string, number>();
-      for (const [repo, n] of bridge.localRepoCounts()) counts.set(repo, n);
+      for (const [repo, n] of local.counts) counts.set(repo, n);
       for (const { repo, n } of backendCounts) {
         const key = repo ?? NO_REPO_KEY;
         counts.set(key, Math.max(counts.get(key) ?? 0, Number(n)));
@@ -249,6 +255,16 @@ export function activate(ctx: vscode.ExtensionContext) {
     pullNow: () => void doPull(),
     setRepoEnabled: (repo: string, enabled: boolean) => void applyPrefChange(repo, enabled),
     setAutoSyncNew: (enabled: boolean) => void applyPrefChange(DEFAULT_PREF_KEY, enabled),
+    openRepo: (path: string) => {
+      if (!path) return;
+      if (!existsSync(path)) {
+        void vscode.window.showWarningMessage(
+          `Cursor Sync: that folder no longer exists — ${path}`,
+        );
+        return;
+      }
+      void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(path));
+    },
     setAutoSync: (v: boolean) =>
       updateConfig("autoSync", v).then(() => (subscribeRealtime(), refresh())),
   });

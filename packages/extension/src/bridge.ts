@@ -9,6 +9,8 @@ import {
   tableForSource,
   buildComposerRepoMap,
   repoForKey,
+  workspacePathOf,
+  repoIdForPath,
   applyRows,
   appendUndoJournal,
   defaultUndoJournalPath,
@@ -206,26 +208,25 @@ export class SyncBridge {
   }
 
   /**
-   * Conversation counts per repo from the local DB — the repos this machine has chatted in.
-   * Keyed by repo id, or NO_REPO_KEY for conversations with no detectable git repo. Cheap: it
-   * reuses the cached composer→repo map plus one COUNT.
+   * The repos this machine has chatted in, from one scan of local conversations: a conversation
+   * count per repo (NO_REPO_KEY for those with no git repo) and a representative local folder path
+   * per repo (for "reveal in Finder"). Remote resolution is cached per folder, so this is cheap.
    */
-  localRepoCounts(): Map<string, number> {
+  localRepos(): { counts: Map<string, number>; paths: Map<string, string> } {
     const db = openReadonly();
     try {
-      const map = this.getComposerRepoMap(db);
       const counts = new Map<string, number>();
-      for (const repo of map.values()) counts.set(repo, (counts.get(repo) ?? 0) + 1);
-      const total = (
-        db
-          .prepare(
-            "SELECT COUNT(*) c FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData:~'",
-          )
-          .get() as { c: number }
-      ).c;
-      const noRepo = total - map.size;
-      if (noRepo > 0) counts.set(NO_REPO_KEY, noRepo);
-      return counts;
+      const paths = new Map<string, string>();
+      const stmt = db.prepare(
+        "SELECT value FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData:~' AND value IS NOT NULL",
+      );
+      for (const r of stmt.iterate() as IterableIterator<{ value: Buffer | string }>) {
+        const path = workspacePathOf(r.value);
+        const repo = path ? repoIdForPath(path) : NO_REPO_KEY;
+        counts.set(repo, (counts.get(repo) ?? 0) + 1);
+        if (path && !paths.has(repo)) paths.set(repo, path);
+      }
+      return { counts, paths };
     } finally {
       db.close();
     }

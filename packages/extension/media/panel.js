@@ -14,6 +14,8 @@
     gh: '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.34c-2.23.49-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>',
     sync: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a7.5 7.5 0 0 1 12.8-5.3L19 8"/><path d="M19 3.5V8h-4.5"/><path d="M20 13a7.5 7.5 0 0 1-12.8 5.3L5 16"/><path d="M5 20.5V16h4.5"/></svg>',
     down: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>',
+    folder:
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   };
 
   const REPO_HELP =
@@ -30,12 +32,16 @@
 
   function repoRow(r) {
     const badge = r.isCurrent ? ' <span class="badge">this window</span>' : "";
+    const reveal = r.path
+      ? `<button class="icon-btn" data-action="openRepo" data-path="${esc(r.path)}" title="Reveal in Finder" aria-label="Reveal ${esc(r.label)} in Finder">${ICON.folder}</button>`
+      : "";
     return `
       <div class="repo-row">
         <div class="repo-info">
           <div class="repo-name truncate" title="${esc(r.repo || "No repo")}">${esc(r.label)}${badge}</div>
           <div class="repo-count">${Number(r.count).toLocaleString()} chat${r.count === 1 ? "" : "s"}</div>
         </div>
+        ${reveal}
         <div class="toggle sm ${r.enabled ? "on" : ""}" data-action="toggleRepo" data-repo="${esc(r.repo)}" role="switch" aria-checked="${r.enabled}"><div class="knob"></div></div>
       </div>`;
   }
@@ -111,6 +117,8 @@
       const repo = el.getAttribute("data-repo");
       const entry = (state.repos || []).find((r) => r.repo === repo);
       vscode.postMessage({ type: "setRepoEnabled", repo, value: !(entry && entry.enabled) });
+    } else if (action === "openRepo") {
+      vscode.postMessage({ type: "openRepo", path: el.getAttribute("data-path") });
     } else if (action === "toggleAutoNew") {
       vscode.postMessage({ type: "setAutoSyncNew", value: !state.autoSyncNew });
     } else if (action === "toggleAuto") {
