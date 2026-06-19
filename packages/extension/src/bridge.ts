@@ -60,12 +60,18 @@ export interface ConvRow {
   name: string;
   created: number | null;
   msgs: number;
+  /** The project folder this conversation came from, if any. */
+  folder: string | null;
+  /** Whether that folder still exists on disk (false = it lives only in Cursor's global DB now). */
+  folderExists: boolean;
   /** Location hints (for "no repo" chats); empty for chats that have a folder. */
   hints: string[];
 }
 
 /** Everything the details pop-out shows for one repo. */
 export interface RepoDetails {
+  /** The global Cursor DB that physically stores every conversation. */
+  dbPath: string;
   folders: string[];
   conversations: ConvRow[];
   truncated: boolean;
@@ -275,6 +281,15 @@ export class SyncBridge {
    */
   repoDetails(repoId: string): RepoDetails {
     const db = openReadonly();
+    const existsCache = new Map<string, boolean>();
+    const onDisk = (p: string): boolean => {
+      let e = existsCache.get(p);
+      if (e === undefined) {
+        e = existsSync(p);
+        existsCache.set(p, e);
+      }
+      return e;
+    };
     try {
       const folders = new Set<string>();
       const conversations: ConvRow[] = [];
@@ -291,11 +306,14 @@ export class SyncBridge {
           name: d.name,
           created: d.createdAt,
           msgs: d.messageCount,
+          folder: d.folder,
+          folderExists: d.folder ? onDisk(d.folder) : false,
           hints: d.folder ? [] : d.contextHints,
         });
       }
       conversations.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
       return {
+        dbPath: defaultGlobalDbPath(),
         folders: [...folders],
         conversations: conversations.slice(0, DETAILS_CONV_CAP),
         truncated: conversations.length > DETAILS_CONV_CAP,

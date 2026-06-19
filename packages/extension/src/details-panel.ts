@@ -8,6 +8,7 @@ export interface DetailsPayload {
   label: string;
   repoId: string;
   isOther: boolean;
+  dbPath: string;
   folders: string[];
   conversations: ConvRow[];
   truncated: boolean;
