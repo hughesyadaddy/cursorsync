@@ -171,10 +171,12 @@ export class SyncBridge {
     return written;
   }
 
-  /** Pull all of the user's rows (optionally one repo) and apply them locally. */
+  /** Pull the user's rows (optionally one repo) and apply them locally, STREAMING page by page. */
   async pullAndApply(scope: SyncScope, currentRepo: string | null): Promise<number> {
-    const records = await this.transport.pullAll(scope === "repo" ? currentRepo : undefined);
-    if (records.length === 0) return 0;
-    return this.applyRecords(records);
+    let total = 0;
+    for await (const page of this.transport.pullPages(scope === "repo" ? currentRepo : undefined)) {
+      total += await this.applyRecords(page);
+    }
+    return total;
   }
 }

@@ -25,23 +25,25 @@ export class Transport {
   }
 
   /** Fetch all rows for the user, optionally filtered to one repo, paginated. */
-  async pullAll(repo?: string | null): Promise<KvRecord[]> {
-    const out: KvRecord[] = [];
-    const pageSize = 1000;
-    for (let from = 0; ; from += pageSize) {
+  async *pullPages(repo?: string | null, pageSize = 1000): AsyncGenerator<KvRecord[]> {
+    // Keyset pagination by id (stable under concurrent writes); yields one page at a time so the
+    // caller applies + discards each page — memory stays bounded for arbitrarily large datasets.
+    let lastId: string | null = null;
+    for (;;) {
       let q = this.client
         .from("cursor_kv")
         .select("id,owner_id,source,ckey,is_binary,value,repo,device_id")
         .order("id", { ascending: true })
-        .range(from, from + pageSize - 1);
+        .limit(pageSize);
+      if (lastId !== null) q = q.gt("id", lastId);
       if (repo) q = q.eq("repo", repo);
       const { data, error } = await q;
       if (error) throw new Error(`pull failed: ${error.message}`);
-      if (!data || data.length === 0) break;
-      out.push(...(data as KvRecord[]));
-      if (data.length < pageSize) break;
+      if (!data || data.length === 0) return;
+      yield data as KvRecord[];
+      lastId = (data[data.length - 1] as KvRecord).id;
+      if (data.length < pageSize) return;
     }
-    return out;
   }
 
   /** Subscribe to live row changes for this user. Returns the channel (call .unsubscribe()). */
