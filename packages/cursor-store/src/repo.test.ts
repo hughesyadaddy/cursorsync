@@ -1,5 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { normalizeRemote, composerMeta, folderForComposer } from "./repo.js";
+import {
+  normalizeRemote,
+  composerMeta,
+  folderForComposer,
+  repoIdForPath,
+  setRemoteStore,
+} from "./repo.js";
+
+describe("repoIdForPath remote store", () => {
+  it("falls back to the remembered remote when a folder has no git", () => {
+    const p = `/nonexistent/cursorsync-test-${Math.random().toString(36).slice(2)}`;
+    setRemoteStore({
+      get: (x) => (x === p ? "github.com/me/remembered" : undefined),
+      set: () => {},
+    });
+    expect(repoIdForPath(p)).toBe("github.com/me/remembered");
+    setRemoteStore(undefined);
+  });
+});
 
 describe("normalizeRemote", () => {
   it("normalizes all remote forms of the same repo to one identity", () => {

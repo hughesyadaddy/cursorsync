@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { hostname } from "node:os";
 import { writeFileSync, readFileSync, rmSync, mkdirSync, watch } from "node:fs";
 import { dirname, join } from "node:path";
-import { repoIdForPath, defaultGlobalDbPath } from "@cursorsync/cursor-store";
+import { repoIdForPath, defaultGlobalDbPath, setRemoteStore } from "@cursorsync/cursor-store";
 import { AuthManager, type AuthUser } from "./auth.js";
 import { Transport } from "./transport.js";
 import { SyncBridge } from "./bridge.js";
@@ -19,6 +19,20 @@ import {
 
 export function activate(ctx: vscode.ExtensionContext) {
   const deviceId = getDeviceId(ctx);
+
+  // Persist resolved folder→remote so a deleted/moved folder keeps its real repo id (not a path: id).
+  const REMOTES_KEY = "cursorsync.remotes";
+  const remotes = ctx.globalState.get<Record<string, string>>(REMOTES_KEY, {});
+  setRemoteStore({
+    get: (p: string) => remotes[p],
+    set: (p: string, r: string) => {
+      if (remotes[p] !== r) {
+        remotes[p] = r;
+        void ctx.globalState.update(REMOTES_KEY, remotes);
+      }
+    },
+  });
+
   const auth = new AuthManager(ctx);
   const transport = new Transport(auth.client);
   const bridge = new SyncBridge(ctx, transport, deviceId);
@@ -58,7 +72,11 @@ export function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push(status$);
 
   const prettyRepo = (repo: string): string =>
-    repo === NO_REPO_KEY ? "Unlinked chats" : repo.split("/").slice(-2).join("/") || repo;
+    repo === NO_REPO_KEY
+      ? "Unlinked chats"
+      : repo.startsWith("path:")
+        ? `${repo.split("/").pop()} (local)`
+        : repo.split("/").slice(-2).join("/") || repo;
 
   const buildRepoList = (): RepoEntry[] => {
     const cur = currentRepo();

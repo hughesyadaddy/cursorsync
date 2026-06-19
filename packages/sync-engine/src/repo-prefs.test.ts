@@ -28,6 +28,11 @@ describe("repoEnabled", () => {
     expect(repoEnabled(null, new Map([[DEFAULT_PREF_KEY, true]]))).toBe(false); // not auto-synced
     expect(repoEnabled(null, new Map([[NO_REPO_KEY, true]]))).toBe(true); // explicit opt-in
   });
+
+  it("treats non-git (path:) folders as opt-in too", () => {
+    expect(repoEnabled("path:/Users/x/local", new Map())).toBe(false);
+    expect(repoEnabled("path:/Users/x/local", new Map([["path:/Users/x/local", true]]))).toBe(true);
+  });
 });
 
 describe("autoSyncNew", () => {

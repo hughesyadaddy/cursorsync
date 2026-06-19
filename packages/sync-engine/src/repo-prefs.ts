@@ -28,7 +28,8 @@ export function repoEnabled(repo: string | null, prefs: Map<string, boolean>): b
   const key = repo ?? NO_REPO_KEY;
   const explicit = prefs.get(key);
   if (explicit !== undefined) return explicit;
-  if (key === NO_REPO_KEY) return false; // unlinked chats are opt-in only
+  // Unlinked chats and non-git folders (path: ids) have no portable repo identity → opt-in only.
+  if (key === NO_REPO_KEY || key.startsWith("path:")) return false;
   const fallback = prefs.get(DEFAULT_PREF_KEY);
   return fallback !== undefined ? fallback : true;
 }

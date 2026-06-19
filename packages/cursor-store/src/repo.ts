@@ -108,6 +108,16 @@ export function normalizeRemote(url: string): string {
   return s.toLowerCase();
 }
 
+/** A persistent folder→remote store, so a deleted/moved folder keeps its real repo identity. */
+export interface RemoteStore {
+  get(folderPath: string): string | undefined;
+  set(folderPath: string, remote: string): void;
+}
+let remoteStore: RemoteStore | undefined;
+export function setRemoteStore(store: RemoteStore | undefined): void {
+  remoteStore = store;
+}
+
 const remoteCache = new Map<string, string | null>();
 
 /** Resolve a folder path to a stable repo id (normalized git remote, else `path:<folder>`). */
@@ -115,18 +125,22 @@ export function repoIdForPath(folderPath: string): string {
   if (!remoteCache.has(folderPath)) {
     let remote: string | null = null;
     try {
-      remote = execFileSync("git", ["-C", folderPath, "remote", "get-url", "origin"], {
+      const raw = execFileSync("git", ["-C", folderPath, "remote", "get-url", "origin"], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 3000,
       }).trim();
+      remote = normalizeRemote(raw);
     } catch {
       remote = null;
     }
-    remoteCache.set(folderPath, remote ? normalizeRemote(remote) : null);
+    // Folder is gone or not a git repo: reuse a remote we resolved while it still existed, so its
+    // chats keep their real repo id instead of falling back to a machine-local path.
+    if (remote === null) remote = remoteStore?.get(folderPath) ?? null;
+    else remoteStore?.set(folderPath, remote); // remember it while we can
+    remoteCache.set(folderPath, remote);
   }
-  const remote = remoteCache.get(folderPath) ?? null;
-  return remote ?? `path:${folderPath}`;
+  return remoteCache.get(folderPath) ?? `path:${folderPath}`;
 }
 
 /**
