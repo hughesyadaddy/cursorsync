@@ -2,7 +2,7 @@
   "name": "cursorsync",
   "displayName": "Cursor Sync",
   "description": "Sync your Cursor chat history across all your devices.",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "license": "MIT",
   "publisher": "lokeylabs",
   "repository": {

@@ -19,11 +19,40 @@ function asJson(value: Buffer | string | null): Record<string, unknown> | null {
   }
 }
 
-/** Pull the workspace folder path out of a composerData value, if present. */
-export function workspacePathOf(composerValue: Buffer | string | null): string | null {
+export interface ComposerMeta {
+  /** workspaceIdentifier.uri.fsPath — the direct folder link, when Cursor recorded it. */
+  fsPath: string | null;
+  /** Fallback: the most-recently-interacted repo from trackedGitRepos. */
+  trackedRepoPath: string | null;
+  /** Number of messages; 0 means an empty "new chat" stub. */
+  messageCount: number;
+}
+
+function lastInteraction(repo: { branches?: Array<{ lastInteractionAt?: number }> }): number {
+  return (repo.branches ?? []).reduce((m, b) => Math.max(m, b.lastInteractionAt ?? 0), 0);
+}
+
+/** Extract the folder links + message count from a composerData value (parses once). */
+export function composerMeta(composerValue: Buffer | string | null): ComposerMeta {
   const obj = asJson(composerValue);
-  const wi = obj?.["workspaceIdentifier"] as { uri?: { fsPath?: string } } | undefined;
-  return wi?.uri?.fsPath ?? null;
+  const fsPath =
+    (obj?.["workspaceIdentifier"] as { uri?: { fsPath?: string } } | undefined)?.uri?.fsPath ??
+    null;
+  const messageCount = (obj?.["fullConversationHeadersOnly"] as unknown[] | undefined)?.length ?? 0;
+  const tracked = obj?.["trackedGitRepos"] as
+    | Array<{ repoPath?: string; branches?: Array<{ lastInteractionAt?: number }> }>
+    | undefined;
+  let trackedRepoPath: string | null = null;
+  if (Array.isArray(tracked) && tracked.length > 0) {
+    const best = [...tracked].sort((a, b) => lastInteraction(b) - lastInteraction(a))[0];
+    trackedRepoPath = best?.repoPath ?? null;
+  }
+  return { fsPath, trackedRepoPath, messageCount };
+}
+
+/** The best folder for a conversation: its recorded workspace, else its tracked git repo. */
+export function folderForComposer(meta: ComposerMeta): string | null {
+  return meta.fsPath ?? meta.trackedRepoPath;
 }
 
 /**
@@ -69,8 +98,8 @@ export function buildComposerRepoMap(db: Database.Database): Map<string, string>
   for (const r of stmt.iterate() as IterableIterator<{ key: string; value: Buffer | string }>) {
     const composerId = r.key.split(":")[1];
     if (!composerId) continue;
-    const path = workspacePathOf(r.value);
-    if (path) map.set(composerId, repoIdForPath(path));
+    const folder = folderForComposer(composerMeta(r.value));
+    if (folder) map.set(composerId, repoIdForPath(folder));
   }
   return map;
 }

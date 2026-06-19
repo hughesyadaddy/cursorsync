@@ -9,7 +9,8 @@ import {
   tableForSource,
   buildComposerRepoMap,
   repoForKey,
-  workspacePathOf,
+  composerMeta,
+  folderForComposer,
   repoIdForPath,
   applyRows,
   appendUndoJournal,
@@ -189,6 +190,11 @@ export class SyncBridge {
             since = r.rowid;
             scanned++;
             if (!shouldSyncRow(source, r.key, policy)) continue; // namespace include/exclude
+            if (
+              r.key.startsWith("composerData:") &&
+              composerMeta(r.value ?? null).messageCount === 0
+            )
+              continue; // skip empty "new chat" stubs
             const repo = repoForKey(r.key, composerRepo);
             if (isConversationKey(r.key) && !repoEnabled(repo, prefs)) continue; // disabled repo
             records.push(await this.encodeForUp(source, r.key, r.value ?? null, ownerId, repo));
@@ -221,10 +227,12 @@ export class SyncBridge {
         "SELECT value FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData:~' AND value IS NOT NULL",
       );
       for (const r of stmt.iterate() as IterableIterator<{ value: Buffer | string }>) {
-        const path = workspacePathOf(r.value);
-        const repo = path ? repoIdForPath(path) : NO_REPO_KEY;
+        const meta = composerMeta(r.value);
+        if (meta.messageCount === 0) continue; // skip empty "new chat" stubs
+        const folder = folderForComposer(meta);
+        const repo = folder ? repoIdForPath(folder) : NO_REPO_KEY;
         counts.set(repo, (counts.get(repo) ?? 0) + 1);
-        if (path && !paths.has(repo)) paths.set(repo, path);
+        if (folder && !paths.has(repo)) paths.set(repo, folder);
       }
       return { counts, paths };
     } finally {
