@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import { hostname } from "node:os";
-import { writeFileSync, readFileSync, rmSync, mkdirSync } from "node:fs";
+import { writeFileSync, readFileSync, rmSync, mkdirSync, watch } from "node:fs";
 import { dirname, join } from "node:path";
-import { repoIdForPath } from "@cursorsync/cursor-store";
+import { repoIdForPath, defaultGlobalDbPath } from "@cursorsync/cursor-store";
 import { AuthManager, type AuthUser } from "./auth.js";
 import { Transport } from "./transport.js";
 import { SyncBridge } from "./bridge.js";
@@ -377,16 +377,50 @@ export function activate(ctx: vscode.ExtensionContext) {
       addLog(u ? `Signed in as ${u.userName ?? u.id}` : "Signed out");
       subscribeRealtime();
       void loadRepoState();
+      if (u) triggerSync();
       // Don't auto-push the whole DB on sign-in. The user kicks off the first (large) sync with
       // "Sync all chats now"; the background timer then keeps it incremental.
     }),
   );
 
-  // Periodic incremental up-sync (capped per tick).
-  const timer = setInterval(() => {
-    if (user && getConfig().autoSync && status !== "syncing") void doUpSync({ background: true });
-  }, 30_000);
-  ctx.subscriptions.push({ dispose: () => clearInterval(timer) });
+  // Event-driven sync: react to actual writes to Cursor's DB instead of polling. fs.watch on the DB
+  // folder fires whenever Cursor saves a chat; we debounce a burst into one sync, with a max wait so
+  // a long continuous session still syncs periodically. A slow safety timer catches missed events.
+  const DEBOUNCE_MS = 1500;
+  const MAX_WAIT_MS = 8000;
+  const SAFETY_MS = 120_000;
+  let debounceTimer: NodeJS.Timeout | undefined;
+  let burstStart = 0;
+  const triggerSync = (): void => {
+    if (!user || !getConfig().autoSync || status === "syncing") return;
+    const now = Date.now();
+    if (burstStart === 0) burstStart = now;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    const wait = Math.min(DEBOUNCE_MS, Math.max(0, MAX_WAIT_MS - (now - burstStart)));
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      burstStart = 0;
+      void doUpSync({ background: true });
+    }, wait);
+  };
+
+  let watcher: ReturnType<typeof watch> | undefined;
+  try {
+    watcher = watch(dirname(defaultGlobalDbPath()), (_event, filename) => {
+      if (filename === null || filename.startsWith("state.vscdb")) triggerSync();
+    });
+  } catch (e) {
+    out.appendLine(`db watch failed (${(e as Error).message}); relying on the safety timer`);
+  }
+  const safety = setInterval(triggerSync, SAFETY_MS);
+  ctx.subscriptions.push({
+    dispose: () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      clearInterval(safety);
+      watcher?.close();
+      bridge.dispose();
+    },
+  });
 
   // Restore any existing session.
   auth
@@ -395,6 +429,7 @@ export function activate(ctx: vscode.ExtensionContext) {
       user = u;
       subscribeRealtime();
       void loadRepoState();
+      if (u) triggerSync();
     })
     .catch((e: unknown) => out.appendLine(`session restore error: ${(e as Error).message}`));
   refresh();

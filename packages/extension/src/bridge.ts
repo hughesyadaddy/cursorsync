@@ -13,6 +13,7 @@ import {
   composerDetail,
   folderForComposer,
   repoIdForPath,
+  PushCache,
   applyRows,
   appendUndoJournal,
   defaultUndoJournalPath,
@@ -90,12 +91,29 @@ const DETAILS_CONV_CAP = 400;
 export class SyncBridge {
   /** composerId→repo map cached and invalidated by the composerData max rowid (cheap to check). */
   private composerRepoCache?: { maxRowid: number; map: Map<string, string> };
+  /** id→content-hash of what we've already uploaded, so unchanged rows aren't re-pushed. */
+  private pushCacheInstance?: PushCache;
 
   constructor(
     private ctx: vscode.ExtensionContext,
     private transport: Transport,
     private deviceId: string,
   ) {}
+
+  private pushCache(): PushCache {
+    if (!this.pushCacheInstance) {
+      const dir = this.ctx.globalStorageUri.fsPath;
+      mkdirSync(dir, { recursive: true });
+      this.pushCacheInstance = new PushCache(join(dir, "push-cache.db"));
+    }
+    return this.pushCacheInstance;
+  }
+
+  /** Close the push cache DB; call on extension deactivate. */
+  dispose(): void {
+    this.pushCacheInstance?.close();
+    this.pushCacheInstance = undefined;
+  }
 
   /**
    * Create a full consistent snapshot of the live DB in ~/cursorsync-backups (the explicit
@@ -190,6 +208,7 @@ export class SyncBridge {
     onBatch?: () => void,
   ): Promise<UpResult> {
     const db = openReadonly();
+    const cache = this.pushCache();
     try {
       const composerRepo = this.getComposerRepoMap(db);
       let state = this.getWatermark();
@@ -212,6 +231,7 @@ export class SyncBridge {
           if (rows.length === 0) break;
 
           const records: KvRecord[] = [];
+          const marks: Array<{ id: string; hash: string }> = [];
           for (const r of rows) {
             since = r.rowid;
             scanned++;
@@ -223,9 +243,22 @@ export class SyncBridge {
               continue; // skip empty "new chat" stubs
             const repo = repoForKey(r.key, composerRepo);
             if (isConversationKey(r.key) && !repoEnabled(repo, prefs)) continue; // disabled repo
+            const id = `${ownerId}:${source}:${r.key}`;
+            const bytes =
+              r.value === null
+                ? null
+                : typeof r.value === "string"
+                  ? Buffer.from(r.value, "utf8")
+                  : r.value;
+            const hash = bytes === null ? "∅" : sha256Hex(bytes);
+            if (cache.unchanged(id, hash)) continue; // content already uploaded — skip re-push
             records.push(await this.encodeForUp(source, r.key, r.value ?? null, ownerId, repo));
+            marks.push({ id, hash });
           }
-          if (records.length) pushed += await this.transport.push(records);
+          if (records.length) {
+            pushed += await this.transport.push(records);
+            cache.mark(marks); // only after a successful push
+          }
 
           // Persist progress per batch — resumable, and frees the batch from memory.
           state = { rowids: { ...state.rowids, [source]: since } };
